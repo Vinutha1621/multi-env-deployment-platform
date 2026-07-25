@@ -9,7 +9,7 @@ resource "aws_vpc" "main" {
 
 
   tags = {
-    name = var.project_name
+    Name = var.project_name
   }
 }
 
