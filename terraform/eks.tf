@@ -2,7 +2,7 @@ resource "aws_eks_node_group" "nodes" {
 
   cluster_name = aws_eks_cluster.eks.name
 
-  node_group_name = "$var.project_name}-nodes"
+  node_group_name = "${var.project_name}-nodes"
 
   node_role_arn = aws_iam_role.node_role.arn
 
