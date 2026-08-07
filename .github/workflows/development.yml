@@ -55,6 +55,18 @@ jobs:
           aws eks update-kubeconfig \
             --region $AWS_REGION \
             --name $CLUSTER_NAME
+      - name: Verify Cluster
+        run: |
+          kubectl config current-context
+          kubectl get nodes
+
+      - name: Verify Namespaces
+        run: |
+          kubectl get namespaces
+
+      - name: Verify Deployments
+        run: |
+          kubectl get deployments -A
 
       - name: Update Deployment Image
         run: |
