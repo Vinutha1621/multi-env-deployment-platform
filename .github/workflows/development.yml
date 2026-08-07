@@ -1,4 +1,4 @@
-name: Development CI
+name: Development CI/CD
 
 on:
   push:
@@ -8,9 +8,10 @@ on:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
 
 jobs:
-  build-and-push:
+  deploy:
     runs-on: ubuntu-latest
 
     permissions:
@@ -35,21 +36,33 @@ jobs:
       - name: Build Docker Image
         run: |
           docker build \
-          -t $ECR_REPOSITORY:${{ github.sha }} \
-          ./app
+            -t $ECR_REPOSITORY:${{ github.sha }} \
+            ./app
 
       - name: Tag Docker Image
         run: |
           docker tag \
-          $ECR_REPOSITORY:${{ github.sha }} \
-          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
+            $ECR_REPOSITORY:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
 
       - name: Push Docker Image
         run: |
           docker push \
-          ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
 
-      - name: Display Image URI
+      - name: Update kubeconfig
         run: |
-          echo "Image pushed successfully"
-          echo "${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}"
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name $CLUSTER_NAME
+
+      - name: Update Deployment Image
+        run: |
+          kubectl set image deployment/multi-env-platform-app \
+          multi-env-platform-app=${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }} \
+          -n development
+
+      - name: Verify Rollout
+        run: |
+          kubectl rollout status deployment/multi-env-platform-app \
+          -n development
