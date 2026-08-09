@@ -1,0 +1,84 @@
+name: Production CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  EKS_CLUSTER_NAME: multi-env-platform-cluster
+  K8S_NAMESPACE: production
+  DEPLOYMENT_NAME: multi-env-app
+  CONTAINER_NAME: app
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker Image
+        run: |
+          docker build \
+            -t $ECR_REPOSITORY:${{ github.sha }} \
+            ./app
+
+      - name: Tag Docker Image
+        run: |
+          docker tag \
+            $ECR_REPOSITORY:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
+
+      - name: Push Docker Image
+        run: |
+          docker push \
+            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name $EKS_CLUSTER_NAME
+
+      - name: Deploy to Production
+        run: |
+          kubectl set image deployment/$DEPLOYMENT_NAME \
+            $CONTAINER_NAME=${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }} \
+            -n $K8S_NAMESPACE
+
+      - name: Wait for Deployment
+        run: |
+          kubectl rollout status \
+            deployment/$DEPLOYMENT_NAME \
+            -n $K8S_NAMESPACE \
+            --timeout=180s
+
+      - name: Verify Deployment
+        run: |
+          kubectl get deployment \
+            $DEPLOYMENT_NAME \
+            -n $K8S_NAMESPACE
+
+          kubectl get pods \
+            -n $K8S_NAMESPACE
